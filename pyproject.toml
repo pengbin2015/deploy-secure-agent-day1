@@ -1,0 +1,23 @@
+[project]
+name = "kestrel"
+version = "1.0.0"
+description = "A deliberately breakable support agent, for teaching agent security"
+requires-python = ">=3.10"
+dependencies = [
+	"langgraph>=0.2",
+	"langgraph-checkpoint-sqlite>=2.0",
+	"python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+traces = ["langfuse>=2.0"]         # ship traces to your shared Langfuse
+
+[project.scripts]
+kestrel = "kestrel.__main__:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["kestrel*", "reference*"]
