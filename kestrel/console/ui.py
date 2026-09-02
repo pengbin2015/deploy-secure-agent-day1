@@ -253,6 +253,7 @@ with right:
     if run_clicked and selected:
         with st.spinner("Running attack…"):
             d = _post("/api/attack", {"id": selected})
+        st.session_state.messages = []          # fresh panel for each attack
         prompt_txt = d.get("prompt") or f"[{selected}]"
         st.session_state.messages.append({"role": "user", "content": prompt_txt})
         st.session_state.messages.append({

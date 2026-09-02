@@ -82,6 +82,13 @@ class Room:
                 "results": results,
             }
 
+    def clear_session_history(self) -> None:
+        """Remove conversation history for the current session without touching seed data."""
+        with self.lock:
+            sid = SHOPPER["session_id"]
+            db.execute("DELETE FROM turn_log WHERE thread_id = ?", (sid,))
+            db.execute("DELETE FROM notes WHERE session_id = ?", (sid,))
+
     def reset(self) -> None:
         with self.lock:
             LOG.clear()
@@ -172,6 +179,8 @@ def create_app(narrow: bool = False) -> FastAPI:
         scenario = BY_ID.get(sid)
         if scenario is None:
             return {"error": "unknown scenario"}
+        room.clear_session_history()
+        LOG.clear()
         out = room.turn(scenario.prompt or scenario.narrative, scenario_id=scenario.id)
         out["prompt"] = scenario.prompt or f"[{scenario.id}]"
         return out
