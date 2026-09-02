@@ -10,7 +10,7 @@ This is the box labelled KESTREL AGENT · LangGraph on the map, in code:
 
 The three primitives from the framework slide are all here and all visible:
 
-    state              a TypedDict, checkpointed to SQLite
+    state              a TypedDict, checkpointed in memory
     nodes              the functions in nodes.py
     conditional edges  route(), where the model chooses what happens next
 
@@ -20,12 +20,10 @@ edge that reaches a tool.
 
 from __future__ import annotations
 
-import sqlite3
 from dataclasses import dataclass, field
 from typing import Any
 
 from ..boundary import ActionBoundary, Session
-from ..config import CONFIG
 from ..controls import load_zone_controls
 from ..events import LOG, new_turn_id
 from . import load_helpers, nodes
@@ -84,11 +82,8 @@ def build(checkpoint: bool = True) -> Any:
     saver = None
     if checkpoint:
         try:
-            from langgraph.checkpoint.sqlite import SqliteSaver
-
-            conn = sqlite3.connect(CONFIG.db_path, check_same_thread=False)
-            saver = SqliteSaver(conn)
-            saver.setup()
+            from langgraph.checkpoint.memory import MemorySaver
+            saver = MemorySaver()
         except Exception:
             saver = None  # checkpointing is a convenience, never a control
     return graph.compile(checkpointer=saver)

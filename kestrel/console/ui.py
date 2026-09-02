@@ -104,11 +104,21 @@ def _visible(text: str) -> str:
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
+if "scenarios" not in st.session_state:
+    st.session_state.scenarios = _get("/api/scenarios").get("scenarios", [])
+if "_state_stale" not in st.session_state:
+    st.session_state._state_stale = True
 
-# ── fetch once per render ──────────────────────────────────────────────────────
+# ── fetch state only when something changed ────────────────────────────────────
+# Widget interactions (e.g. dropdown changes) rerun the script but should NOT
+# hit the API — only actual user actions (Send, Run attack, Reset, Switch) do.
 
-state = _get("/api/state")
-scenarios = _get("/api/scenarios").get("scenarios", [])
+if st.session_state._state_stale:
+    st.session_state._cached_state = _get("/api/state")
+    st.session_state._state_stale = False
+
+state = st.session_state._cached_state
+scenarios = st.session_state.scenarios
 session_info = state.get("session", {})
 
 # ── layout ─────────────────────────────────────────────────────────────────────
@@ -189,12 +199,14 @@ with left:
     if send and prompt.strip():
         text = prompt.strip()
         st.session_state.messages.append({"role": "user", "content": text})
-        d = _post("/api/chat", {"message": text})
+        with st.spinner("Kestrel is thinking…"):
+            d = _post("/api/chat", {"message": text})
         st.session_state.messages.append({
             "role": "assistant",
             "content": d.get("reply", "The agent is not reachable. Check the terminal."),
             "refused": bool(d.get("refused")),
         })
+        st.session_state._state_stale = True
         st.rerun()
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -239,7 +251,8 @@ with right:
         swap_clicked = st.button("Switch", use_container_width=True)
 
     if run_clicked and selected:
-        d = _post("/api/attack", {"id": selected})
+        with st.spinner("Running attack…"):
+            d = _post("/api/attack", {"id": selected})
         prompt_txt = d.get("prompt") or f"[{selected}]"
         st.session_state.messages.append({"role": "user", "content": prompt_txt})
         st.session_state.messages.append({
@@ -259,15 +272,18 @@ with right:
                 "refused": result["decision"] == "DENY",
                 "response": result.get("response", ""),
             })
+        st.session_state._state_stale = True
         st.rerun()
 
     if reset_clicked:
         _post("/api/reset")
         st.session_state.messages = []
+        st.session_state._state_stale = True
         st.rerun()
 
     if swap_clicked:
         _post("/api/profile")
+        st.session_state._state_stale = True
         st.rerun()
 
     # ── zones ─────────────────────────────────────────────────────────────────
