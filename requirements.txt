@@ -2,3 +2,13 @@
 langgraph>=0.2
 langgraph-checkpoint-sqlite>=2.0
 python-dotenv>=1.0
+
+# Backend API
+fastapi>=0.100
+uvicorn[standard]>=0.20
+
+# Frontend
+streamlit>=1.31
+
+# HTTP client used by the Streamlit frontend to call FastAPI
+requests>=2.28

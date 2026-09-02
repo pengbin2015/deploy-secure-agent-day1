@@ -169,6 +169,7 @@ def plan(state: State, config: Optional[RunnableConfig] = None) -> State:
     agent = rt(config)["agent"]
     session = rt(config)["session"]
     calls = agent.model.plan(state["message"], session=session,
+                             context=state.get("context", []),
                              scenario_id=state.get("scenario_id"))
     return {"proposed": [{"tool": c.tool, "args": dict(c.args)} for c in calls]}
 

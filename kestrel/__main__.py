@@ -176,11 +176,13 @@ def cmd_attack(args: argparse.Namespace) -> int:
 def run_beat_validator() -> list[dict[str, str]]:
     """Run all Block 2 payloads through the active intake controls."""
     from .attacks.payloads import PAYLOADS
+    from .config import reload as _reload_config
     from .controls.intake import Intake
     from .controls import load_zone_controls
     from .events import ALLOW as _ALLOW
     from .surfaces import Surface
 
+    _reload_config()  # honour KESTREL_LLM changes made after module load (e.g. in tests)
     zones = load_zone_controls()
 
     _LAYER = {
@@ -343,10 +345,46 @@ def cmd_graph(args: argparse.Namespace) -> int:
 
 
 def cmd_console(args: argparse.Namespace) -> int:
-    from .console.server import serve
+    import subprocess
+    import sys
+    import threading
+    import time
+    from pathlib import Path
+
+    from .console.server import create_app
+    from .controls import profile as live_profile
 
     db.init()
-    serve(port=args.port, narrow=args.narrow)
+    app = create_app(narrow=args.narrow)
+
+    def _run_api() -> None:
+        import uvicorn
+        uvicorn.run(app, host="0.0.0.0", port=args.port, log_level="error")
+
+    threading.Thread(target=_run_api, daemon=True).start()
+    time.sleep(0.8)  # give uvicorn time to bind the port
+
+    ui_port = args.ui_port
+    print(f"\n  Kestrel API  http://localhost:{args.port}")
+    print(f"  Kestrel UI   http://localhost:{ui_port}")
+    print(f"  Controls: {live_profile()}   Tools: "
+          f"{'narrow' if args.narrow else 'as shipped'}   (ctrl-c to stop)\n")
+
+    ui_path = Path(__file__).parent / "console" / "ui.py"
+    env = os.environ.copy()
+    env["KESTREL_API_URL"] = f"http://localhost:{args.port}"
+
+    try:
+        subprocess.run(
+            [sys.executable, "-m", "streamlit", "run", str(ui_path),
+             "--server.port", str(ui_port),
+             "--server.headless", "true",
+             "--browser.gatherUsageStats", "false",
+             "--theme.base", "dark"],
+            env=env,
+        )
+    except KeyboardInterrupt:
+        pass
     return 0
 
 
@@ -393,6 +431,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     s = sub.add_parser("console")
     s.add_argument("--port", type=int, default=CONFIG.console_port)
+    s.add_argument("--ui-port", type=int, default=8501)
     s.set_defaults(fn=cmd_console)
     return p
 

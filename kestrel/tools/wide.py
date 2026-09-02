@@ -100,6 +100,15 @@ def list_my_orders(customer_id: int) -> list[dict[str, Any]]:
     )
 
 
+def refund_order(order_id: int, amount_cents: int, session_id: str = "") -> dict[str, Any]:
+    db.execute(
+        "INSERT INTO refunds (order_id, amount_cents, session_id, created_at)"
+        " VALUES (?,?,?,?)",
+        (order_id, amount_cents, session_id, time.time()),
+    )
+    return {"order_id": order_id, "refunded_cents": amount_cents}
+
+
 SPECS = [
     ToolSpec(
         name="lookup_orders",
@@ -151,5 +160,16 @@ SPECS = [
         fn=list_my_orders,
         params={"customer_id": Param(int)},
         description="List the orders belonging to one customer.",
+    ),
+    ToolSpec(
+        name="refund_order",
+        fn=refund_order,
+        params={
+            "order_id": Param(int),
+            "amount_cents": Param(int),
+            "session_id": Param(str, required=False, max_len=64),
+        },
+        side_effect=True,
+        description="Refund an amount against one order.",
     ),
 ]

@@ -58,7 +58,7 @@ python -m kestrel list            # the ten attacks
 Then open the console and break something:
 
 ```
-python -m kestrel console          # http://localhost:8899
+python -m kestrel console          # http://localhost:8501
 ```
 
 To run the Block 2 intake exercise from the terminal, use:
@@ -164,10 +164,11 @@ tests/           the suite you run to prove a fix
 docs/            setup, architecture, both workshop briefs
 ```
 
-LangGraph is the one dependency, because the deck teaches Kestrel as a
-LangGraph agent. Langfuse and a live model are both optional and off by
-default — the security properties live in Kestrel's own code, which is the
-point the framework slide makes.
+The control room uses **Streamlit** (UI, port 8501) backed by **FastAPI**
+(API, port 8899). **LangGraph** is the agent runtime. All three start with
+`python -m kestrel console`. Langfuse and a live model are both optional and
+off by default — the security properties live in Kestrel's own code, which
+is the point the framework slide makes.
 
 ## Docs
 

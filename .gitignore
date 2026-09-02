@@ -7,3 +7,5 @@ venv/
 .mypy_cache/
 .claude/
 board.md
+*.db-shm
+*.db-wal

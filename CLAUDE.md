@@ -5,6 +5,15 @@ lab for the NUS-ISS course "Deploying Safe Secure AI Agents" (two days). The gap
 are intentional; students find and fill them during workshops. Do not "fix" a gap
 unless the task explicitly asks you to.
 
+## Tech stack
+
+| Layer | Technology |
+|---|---|
+| Frontend | Streamlit |
+| Backend API | FastAPI |
+| AI agent | LangGraph |
+| Database | SQLite (via `kestrel/db.py`) |
+
 ## Commands
 
 ```powershell
@@ -55,8 +64,8 @@ kestrel/
     scenarios.py   SCENARIOS list + BY_ID dict
     payloads.py    PAYLOADS for beat-validator (5 items)
   console/
-    server.py      stdlib HTTP server — no FastAPI
-    ui.py          single-file HTML/CSS/JS page — no CDN, no build step
+    server.py      FastAPI app — routes for chat, attack, state, reset, profile
+    ui.py          Streamlit frontend (control room + chat widget)
     panel.py       zone_state(), render(), snapshot()
 reference/         completed answers — facilitator only, do not expose to students
 tests/             pytest suite
@@ -96,8 +105,8 @@ Vacuous green is the one thing a security console must never show.
 
 - **No hardcoded strings** for security event notes or reasons. Generate them
   from `event.reason` or `event.decision`.
-- **No CDN, no npm, no build step.** `console/ui.py` is a single embedded page.
-  Lab networks have an allowlist.
+- **No CDN, no npm, no build step.** The Streamlit frontend uses only pip-installed
+  packages. Lab networks have an allowlist.
 - **No raw SQL in tool functions.** Use `db.query()` and `db.execute()`.
 - **`boundary.py` and `events.py` — do not change their shape.** The console,
   Attack Board, and Evidence C all depend on it.
@@ -115,8 +124,8 @@ Vacuous green is the one thing a security console must never show.
 | `kestrel/agent/llm.py` | `classify_intake()` — swap soft ↔ precise prompt for live demo |
 | `kestrel/tools/narrow.py` | Narrowed tool set including `get_shipping_address` |
 | `kestrel/db.py` | Seed data: 4 customers (1001-1004), 12 orders |
-| `kestrel/console/server.py` | HTTP routes, `Room`, profile swap |
-| `kestrel/console/ui.py` | HTML/CSS/JS — single file, no external dependencies |
+| `kestrel/console/server.py` | FastAPI routes: `/api/chat`, `/api/attack`, `/api/state`, `/api/reset`, `/api/profile` |
+| `kestrel/console/ui.py` | Streamlit frontend — chat widget + control room |
 
 ## The semantic demo swap
 

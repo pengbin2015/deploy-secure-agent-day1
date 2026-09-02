@@ -1,13 +1,9 @@
-"""The local web console: type at Kestrel, watch the control room react.
+"""FastAPI backend for the Kestrel control room.
 
-    python -m kestrel console          then open http://localhost:8899
-
-Stdlib http.server. No FastAPI, no uvicorn, no npm, nothing to install on a lab
-machine, and it starts in under a second.
+    python -m kestrel console      API on :8899, UI on :8501
 
 Endpoints:
 
-    GET  /                 the page
     GET  /api/state        zones, breaches, mediation, recent events
     GET  /api/scenarios    the attack corpus, for the dropdown
     POST /api/chat         {"message": "..."}  -> one turn
@@ -18,11 +14,13 @@ Endpoints:
 
 from __future__ import annotations
 
-import json
 import os
 import threading
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
 from .. import db
 from ..boundary import ActionBoundary, Session
@@ -31,7 +29,6 @@ from ..controls import profile as live_profile
 from ..events import LOG
 from ..tools.registry import REGISTRY
 from .panel import snapshot
-from .ui import PAGE
 
 #: One shopper for the class. Amara is customer 1001; everything she is
 #: entitled to see belongs to 1001, which is what makes the leak legible.
@@ -100,112 +97,101 @@ class Room:
             return now
 
 
-class _Handler(BaseHTTPRequestHandler):
-    room: Room = None  # type: ignore[assignment]
+# -- request bodies ------------------------------------------------------------
 
-    # -- plumbing ----------------------------------------------------------
-    def _send(self, payload: Any, status: int = 200, html: bool = False) -> None:
-        body = payload.encode() if html else json.dumps(payload).encode()
-        self.send_response(status)
-        self.send_header("Content-Type",
-                         "text/html; charset=utf-8" if html else "application/json")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        try:
-            self.wfile.write(body)
-        except (BrokenPipeError, ConnectionAbortedError):
-            pass
-
-    def _body(self) -> dict[str, Any]:
-        n = int(self.headers.get("Content-Length") or 0)
-        if not n:
-            return {}
-        try:
-            return json.loads(self.rfile.read(n).decode() or "{}")
-        except json.JSONDecodeError:
-            return {}
-
-    def log_message(self, *args: Any) -> None:
-        pass  # the console is for the room, not for the terminal
-
-    # -- routes ------------------------------------------------------------
-    def do_GET(self) -> None:  # noqa: N802
-        if self.path.startswith("/api/state"):
-            state = snapshot(self.room.boundary)
-            rows = db.query("SELECT name FROM customers WHERE id = ?",
-                            (SHOPPER["customer_id"],))
-            state["session"] = {
-                "customer_id": SHOPPER["customer_id"],
-                "name": rows[0]["name"] if rows else "Customer",
-            }
-            state["profile"] = live_profile()
-            state["tools"] = len(REGISTRY.names())
-            return self._send(state)
-
-        if self.path.startswith("/api/scenarios"):
-            from ..attacks.scenarios import SCENARIOS
-
-            scenarios = [
-                {"id": s.id, "title": s.title, "day": s.day,
-                 "entry": int(s.entry_surface)} for s in SCENARIOS
-            ]
-            scenarios.append({"id": "beat_the_validator",
-                              "title": "Beat the validator", "day": 1,
-                              "entry": 1})
-            return self._send({"scenarios": scenarios})
-
-        return self._send(PAGE, html=True)
-
-    def do_POST(self) -> None:  # noqa: N802
-        body = self._body()
-
-        if self.path.startswith("/api/chat"):
-            message = (body.get("message") or "").strip()
-            if not message:
-                return self._send({"error": "empty message"}, 400)
-            return self._send(self.room.turn(message))
-
-        if self.path.startswith("/api/attack"):
-            from ..attacks.scenarios import BY_ID
-
-            scenario_id = body.get("id", "")
-            if scenario_id == "beat_the_validator":
-                out = self.room.beat_validator()
-                out["prompt"] = "Beat the validator (8 payloads)"
-                return self._send(out)
-            scenario = BY_ID.get(scenario_id)
-            if scenario is None:
-                return self._send({"error": "unknown scenario"}, 404)
-            out = self.room.turn(scenario.prompt or scenario.narrative,
-                                 scenario_id=scenario.id)
-            out["prompt"] = scenario.prompt or f"[{scenario.id}]"
-            return self._send(out)
-
-        if self.path.startswith("/api/reset"):
-            self.room.reset()
-            return self._send({"ok": True})
-
-        if self.path.startswith("/api/profile"):
-            return self._send({"profile": self.room.swap_profile()})
-
-        return self._send({"error": "not found"}, 404)
+class _ChatBody(BaseModel):
+    message: str = ""
 
 
-def serve(boundary: Any = None, port: int | None = None,
-          background: bool = False, narrow: bool = False) -> ThreadingHTTPServer:
+class _AttackBody(BaseModel):
+    id: str = ""
+
+
+# -- app factory ---------------------------------------------------------------
+
+def create_app(narrow: bool = False) -> FastAPI:
+    """Create and return the configured FastAPI application."""
     db.init()
-    _Handler.room = Room(narrow=narrow)
+    room = Room(narrow=narrow)
+
+    app = FastAPI(title="Kestrel")
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    @app.get("/api/state")
+    def get_state() -> dict[str, Any]:
+        s = snapshot(room.boundary)
+        rows = db.query("SELECT name FROM customers WHERE id = ?",
+                        (SHOPPER["customer_id"],))
+        s["session"] = {
+            "customer_id": SHOPPER["customer_id"],
+            "name": rows[0]["name"] if rows else "Customer",
+        }
+        s["profile"] = live_profile()
+        s["tools"] = len(REGISTRY.names())
+        return s
+
+    @app.get("/api/scenarios")
+    def get_scenarios() -> dict[str, Any]:
+        from ..attacks.scenarios import SCENARIOS
+
+        items = [
+            {"id": s.id, "title": s.title, "day": s.day,
+             "entry": int(s.entry_surface)} for s in SCENARIOS
+        ]
+        beat = {"id": "beat_the_validator", "title": "Beat the validator",
+                "day": 1, "entry": 1}
+        # Insert immediately after indirect_injection_helpdoc
+        idx = next(
+            (i for i, s in enumerate(items) if s["id"] == "indirect_injection_helpdoc"),
+            len(items) - 1,
+        )
+        items.insert(idx + 1, beat)
+        return {"scenarios": items}
+
+    @app.post("/api/chat")
+    def post_chat(body: _ChatBody) -> dict[str, Any]:
+        message = (body.message or "").strip()
+        if not message:
+            return {"error": "empty message"}
+        return room.turn(message)
+
+    @app.post("/api/attack")
+    def post_attack(body: _AttackBody) -> dict[str, Any]:
+        from ..attacks.scenarios import BY_ID
+
+        sid = body.id
+        if sid == "beat_the_validator":
+            out = room.beat_validator()
+            out["prompt"] = "Beat the validator"
+            return out
+        scenario = BY_ID.get(sid)
+        if scenario is None:
+            return {"error": "unknown scenario"}
+        out = room.turn(scenario.prompt or scenario.narrative, scenario_id=scenario.id)
+        out["prompt"] = scenario.prompt or f"[{scenario.id}]"
+        return out
+
+    @app.post("/api/reset")
+    def post_reset() -> dict[str, Any]:
+        room.reset()
+        return {"ok": True}
+
+    @app.post("/api/profile")
+    def post_profile() -> dict[str, Any]:
+        return {"profile": room.swap_profile()}
+
+    return app
+
+
+def serve(port: int | None = None, narrow: bool = False) -> None:
+    """Start the FastAPI server with uvicorn (blocks). Used for standalone use."""
+    import uvicorn
+
+    app = create_app(narrow=narrow)
     port = port or CONFIG.console_port
-    httpd = ThreadingHTTPServer(("0.0.0.0", port), _Handler)
-    if background:
-        threading.Thread(target=httpd.serve_forever, daemon=True).start()
-        return httpd
-    print(f"\n  Kestrel is on http://localhost:{port}")
-    print("  Left: the customer's chat. Right: the control room.")
-    print(f"  Controls: {live_profile()}   Tools: "
-          f"{'narrow' if narrow else 'as shipped'}   (ctrl-c to stop)\n")
-    try:
-        httpd.serve_forever()
-    except KeyboardInterrupt:
-        print("  stopped.")
-    return httpd
+    uvicorn.run(app, host="0.0.0.0", port=port, log_level="warning")
