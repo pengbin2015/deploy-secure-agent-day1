@@ -126,6 +126,7 @@ class Kestrel:
         save_checkpoint(session.session_id, {
             "turn_id": turn_id,
             "message": message,
+            "reply": turn.reply,
             "executed": [e["tool"] for e in turn.executed],
             "refused": [r["tool"] for r in turn.refused],
         })

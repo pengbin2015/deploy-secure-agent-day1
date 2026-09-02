@@ -137,9 +137,25 @@ def retrieve(state: State, config: Optional[RunnableConfig] = None) -> State:
 
 def recall(state: State, config: Optional[RunnableConfig] = None) -> State:
     """Surface 7. Anything the agent decided to remember from earlier."""
+    import json
+    from .memory import history as _turn_history
+
     agent = rt(config)["agent"]
     session = rt(config)["session"]
     ctx = list(state["context"])
+
+    # Recent conversation turns so the agent knows what has already been said.
+    for row in _turn_history(session.session_id)[-4:]:
+        try:
+            data = json.loads(row["blob"])
+            user_msg = (data.get("message") or "")[:300]
+            agent_reply = (data.get("reply") or "")[:400]
+            if user_msg:
+                ctx.append(f"[memory/turn] user: {user_msg} | agent: {agent_reply}")
+        except Exception:
+            pass
+
+    # Agent-decided structured memories (Day 2 workshop — Surface 7 security control).
     for note in agent.zones.recall(session.session_id):
         ctx.append(f"[memory/{note['kind']}] {note['body']}")
     return {"context": ctx}
