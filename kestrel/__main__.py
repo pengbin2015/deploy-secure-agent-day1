@@ -358,7 +358,10 @@ def cmd_console(args: argparse.Namespace) -> int:
     app = create_app(narrow=args.narrow)
 
     def _run_api() -> None:
+        import asyncio
         import uvicorn
+        if sys.platform == "win32":
+            asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
         uvicorn.run(app, host="0.0.0.0", port=args.port, log_level="error")
 
     threading.Thread(target=_run_api, daemon=True).start()
